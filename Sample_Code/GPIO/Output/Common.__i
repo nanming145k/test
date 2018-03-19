@@ -1,1 +1,0 @@
-"Code\Common.c" LARGE OPTIMIZE (4,SPEED) BROWSE INCDIR(..\..\Include) DEFINE (FOSC_160000) DEBUG OBJECTEXTEND PRINT(.\LST\Common.lst) TABS (2) OBJECT(.\Output\Common.obj)
