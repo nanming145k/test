@@ -1,0 +1,444 @@
+C51 COMPILER V9.54   RCVPKT                                                                03/19/2018 09:53:24 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE RCVPKT
+OBJECT MODULE PLACED IN .\Output\rcvpkt.obj
+COMPILER INVOKED BY: d:\Keil_v5\C51\BIN\C51.EXE Code\rcvpkt.c LARGE OPTIMIZE(4,SPEED) BROWSE INCDIR(..\..\Include) DEFIN
+                    -E(FOSC_160000) DEBUG OBJECTEXTEND PRINT(.\LST\rcvpkt.lst) TABS(2) OBJECT(.\Output\rcvpkt.obj)
+
+line level    source
+
+   1          #include <stdio.h>
+   2          #include <string.h>
+   3          #include "Common.h"
+   4          #include "N76E003.h"
+   5          #include "Define.h"
+   6          #include "Delay.h"
+   7          #include "SFR_Macro.h"
+   8          #include "Function_define.h"
+   9          #include "hal.h"
+  10          #include "rcvpkt.h"
+  11          
+  12          
+  13          unsigned char Cul_MsgLen( unsigned char i)
+  14          {
+  15   1        unsigned char len;
+  16   1      
+  17   1      if((i>0)&&(i<0x20))
+  18   1        len=1;
+  19   1      else if((i>=0x20)&&(i<0x30))
+  20   1        len=2;
+  21   1      else if((i>=0x30)&&(i<0x40))
+  22   1        len=3;
+  23   1      else if(i==0x48)
+  24   1        len=4;
+  25   1      else if((i>0x50)&&(i<0x60))
+  26   1        len=5;
+  27   1      else if(i==0x68)
+  28   1        len=6;
+  29   1      else if((i>0x70)&&(i<0x80))
+  30   1        len=7;
+  31   1      else if((i>0x80)&&(i<0x90))
+  32   1        len=8;
+  33   1      else if(i==0xA4)
+  34   1        len=12;
+  35   1      else if(i==0xC4)
+  36   1        len=16;
+  37   1      else if(i==0xE2)
+  38   1        len=20;
+  39   1      
+  40   1       return len;
+  41   1      }
+  42          
+  43          ECH_ERR_TYPE_E  Pakcet_Check_Checksum(  RX_PACKET_STRUCTURE_S *p_tx_receive_packet )
+  44          {
+  45   1        unsigned char i = 0 ;
+  46   1        unsigned char sum = p_tx_receive_packet->header;
+  47   1        
+  48   1        for( i=0; i<p_tx_receive_packet->msg_len; i++)
+  49   1        {
+  50   2          sum = sum^p_tx_receive_packet->msg[i];
+  51   2        }
+  52   1        
+  53   1        if( sum != p_tx_receive_packet->checksum)
+  54   1        {
+C51 COMPILER V9.54   RCVPKT                                                                03/19/2018 09:53:24 PAGE 2   
+
+  55   2          return ERR_DECODE_ERROR_CHECK_PACKET;
+  56   2        }
+  57   1        return ERR_NO_ERROR;
+  58   1      }
+  59          
+  60          void Reset_Receive_Packet(void)
+  61          {
+  62   1        memset(&tx, 0 , sizeof(TX_S));
+  63   1        return;
+  64   1      }
+  65          
+  66          u8  Receive_Packet(RX_PACKET_STRUCTURE_S    **p_tx_receive_packet)
+  67          {
+  68   1          u8 status = 0;
+  69   1          TX_RECEIVE_PACKET_INFO_S  *p_rcv_packet_info_v = &tx.rcv_packet_info_v;   //电压解调信息
+  70   1          RX_PACKET_STRUCTURE_S     *p_rcv_packet_struct_v = &tx.rcv_packet_v;      //电压解调包内容
+  71   1          TX_RECEIVE_PACKET_INFO_S  *p_rcv_packet_info_c = &tx.rcv_packet_info_c;   //电流解调信息
+  72   1          RX_PACKET_STRUCTURE_S     *p_rcv_packet_struct_c = &tx.rcv_packet_c;      //电流解调包的内容
+  73   1        
+  74   1        if (*p_tx_receive_packet != NULL) 
+  75   1        {
+  76   2          *p_tx_receive_packet = NULL;
+  77   2          Reset_Receive_Packet();
+  78   2        }
+  79   1        
+  80   1        if((*p_tx_receive_packet == NULL)
+  81   1          && (TX_ON == p_rcv_packet_info_c->packet_set))
+  82   1        {
+  83   2          if(ERR_NO_ERROR == Pakcet_Check_Checksum( p_rcv_packet_struct_c))
+  84   2          {
+  85   3            *p_tx_receive_packet = p_rcv_packet_struct_c;
+  86   3            ASKch=0;
+  87   3      //      Delay10us(8);//wait another path compelte
+  88   3      //      printf("Ask0 \n");
+  89   3          }
+  90   2          else
+  91   2          {
+  92   3      //      memset( &tx.rcv_packet_c,0,sizeof(RX_PACKET_STRUCTURE_S));
+  93   3      //      memset( &tx.rcv_packet_info_c,0,sizeof(TX_RECEIVE_PACKET_INFO_S));
+  94   3      //      printf("c check error!!! \n");
+  95   3            if(TX_PHASE_PING==tx_phase)
+  96   3              Disable_coil_power();
+  97   3          }
+  98   2          p_rcv_packet_info_c->packet_set = TX_OFF; 
+  99   2        }
+ 100   1        
+ 101   1        if((*p_tx_receive_packet == NULL)
+ 102   1          && (TX_ON == p_rcv_packet_info_v->packet_set))
+ 103   1        {
+ 104   2          if(ERR_NO_ERROR == Pakcet_Check_Checksum( p_rcv_packet_struct_v))
+ 105   2          {
+ 106   3            *p_tx_receive_packet = p_rcv_packet_struct_v; 
+ 107   3            ASKch=1;      
+ 108   3      //      Delay10us(8);//wait another path compelte 
+ 109   3      //      printf("Ask1 \n");      
+ 110   3          }
+ 111   2          else
+ 112   2          {
+ 113   3      //      memset( &tx.rcv_packet_v,0,sizeof(RX_PACKET_STRUCTURE_S));
+ 114   3      //      memset( &tx.rcv_packet_info_v,0,sizeof(TX_RECEIVE_PACKET_INFO_S));
+ 115   3      //      printf("v check error!!! \n");
+ 116   3            if(TX_PHASE_PING==tx_phase)
+C51 COMPILER V9.54   RCVPKT                                                                03/19/2018 09:53:24 PAGE 3   
+
+ 117   3              Disable_coil_power();
+ 118   3          }
+ 119   2          p_rcv_packet_info_v->packet_set = TX_OFF;
+ 120   2        }
+ 121   1        
+ 122   1        if (*p_tx_receive_packet == NULL)
+ 123   1          status = 1;
+ 124   1        
+ 125   1        return status;
+ 126   1      }
+ 127          
+ 128          ECH_ERR_TYPE_E   Decode_OneByte( TX_RECEIVE_PACKET_INFO_S *p_rcv_packet_info)
+ 129          {
+ 130   1        register uint8_t  data parity_cnt = p_rcv_packet_info->parity_cnt;
+ 131   1        register uint8_t  data bit_cnt = p_rcv_packet_info->bit_cnt;
+ 132   1        register uint8_t  data byte = p_rcv_packet_info->byte_val;
+ 133   1        ECH_ERR_TYPE_E  error_type = ERR_NO_ERROR;
+ 134   1        
+ 135   1        if( bit_cnt==0)//start bit
+ 136   1        {
+ 137   2          p_rcv_packet_info->byte_val = 0;
+ 138   2          byte = p_rcv_packet_info->byte_val;
+ 139   2          
+ 140   2          if( p_rcv_packet_info->bit_val!=0)
+ 141   2          {
+ 142   3            error_type= ERR_DECODE_ERROR_CHECK_BYTE_START;
+ 143   3          }
+ 144   2          parity_cnt = 0;
+ 145   2          bit_cnt ++;
+ 146   2        }
+ 147   1        else if( bit_cnt<9) // data byte
+ 148   1        {
+ 149   2          byte=byte>>1;
+ 150   2          if( p_rcv_packet_info->bit_val==1)
+ 151   2          {
+ 152   3            byte|=0x80;
+ 153   3            parity_cnt+=1;
+ 154   3          }
+ 155   2          bit_cnt ++;
+ 156   2        }
+ 157   1        else if( bit_cnt==9)//check bit
+ 158   1        {
+ 159   2          if( (parity_cnt%2)== p_rcv_packet_info->bit_val)
+ 160   2          {
+ 161   3            error_type = ERR_DECODE_ERROR_CHECK_BYTE_PARITY;
+ 162   3          }
+ 163   2          bit_cnt ++;
+ 164   2        }
+ 165   1        else if( bit_cnt==10)//stop bit
+ 166   1        {
+ 167   2          if( p_rcv_packet_info->bit_val!=1)
+ 168   2          {
+ 169   3            error_type = ERR_DECODE_ERROR_CHECK_BYTE_STOP;
+ 170   3          }
+ 171   2          bit_cnt ++;
+ 172   2        }
+ 173   1      
+ 174   1        p_rcv_packet_info->byte_val = byte;
+ 175   1        
+ 176   1        if( bit_cnt==11)
+ 177   1        {
+ 178   2          p_rcv_packet_info->byte_set = TX_ON;
+C51 COMPILER V9.54   RCVPKT                                                                03/19/2018 09:53:24 PAGE 4   
+
+ 179   2          parity_cnt = 0;
+ 180   2          bit_cnt = 0;
+ 181   2          byte = 0;
+ 182   2        }
+ 183   1        
+ 184   1        p_rcv_packet_info->bit_cnt = bit_cnt;
+ 185   1        
+ 186   1        p_rcv_packet_info->parity_cnt = parity_cnt;
+ 187   1        p_rcv_packet_info->error_type = error_type;
+ 188   1        
+ 189   1        return error_type;
+ 190   1      } 
+ 191          
+ 192          
+ 193          void rcv_packet_int_handler( u8 vol)
+ 194          {
+ 195   1        register uint16_t data  time_diff = 0;
+ 196   1              
+ 197   1         static u16 data time_diffv0 ;
+ 198   1         static u16 data time_diffv1 ;
+ 199   1              
+ 200   1         static u16 data  time_diffc0 ;
+ 201   1         static u16 data time_diffc1 ;
+ 202   1              
+ 203   1        TX_RECEIVE_PACKET_INFO_S  data *p_rcv_packet_info = NULL;
+ 204   1        RX_PACKET_STRUCTURE_S     data *p_rcv_packet_struct = NULL;
+ 205   1        
+ 206   1      
+ 207   1        if(vol)
+ 208   1        {
+ 209   2          p_rcv_packet_struct = &tx.rcv_packet_v;
+ 210   2          p_rcv_packet_info = &tx.rcv_packet_info_v;
+ 211   2        }
+ 212   1        else
+ 213   1        {
+ 214   2          p_rcv_packet_struct = &tx.rcv_packet_c;
+ 215   2          p_rcv_packet_info = &tx.rcv_packet_info_c;
+ 216   2        }
+ 217   1      
+ 218   1        if( (TX_OFF == p_rcv_packet_info->receive_trigger)
+ 219   1          &&(TX_OFF == p_rcv_packet_info->packet_set))
+ 220   1        {
+ 221   2      
+ 222   2          p_rcv_packet_info->receive_trigger = TX_ON;
+ 223   2          p_rcv_packet_info->cnt_on = TX_TRUE;
+ 224   2          p_rcv_packet_info->packet_part = PREAMBLE;
+ 225   2        }
+ 226   1      
+ 227   1      
+ 228   1      /*======================= Decode a bit val =========================*/  
+ 229   1        if(vol)
+ 230   1        {
+ 231   2               // time_diffv1 = TIM2_GetCounter(vol);
+ 232   2                time_diffv1=(C1H<<8)+C1L;
+ 233   2                if(time_diffv1>time_diffv0)
+ 234   2                  time_diff=time_diffv1-time_diffv0;
+ 235   2                else
+ 236   2                  time_diff=65534-time_diffv0+time_diffv1; 
+ 237   2                time_diffv0=time_diffv1;
+ 238   2        }
+ 239   1        else
+ 240   1        {
+C51 COMPILER V9.54   RCVPKT                                                                03/19/2018 09:53:24 PAGE 5   
+
+ 241   2                //time_diffc1 = TIM2_GetCounter(vol);
+ 242   2                time_diffc1=(C0H<<8)+C0L;
+ 243   2                if(time_diffc1>time_diffc0)
+ 244   2                  time_diff=time_diffc1-time_diffc0;
+ 245   2                else
+ 246   2                  time_diff=65534-time_diffc0+time_diffc1; 
+ 247   2                time_diffc0=time_diffc1;
+ 248   2        }
+ 249   1      
+ 250   1      if( TX_ON==p_rcv_packet_info->receive_trigger)  
+ 251   1      {
+ 252   2        if( p_rcv_packet_info->cnt_on == TX_TRUE)
+ 253   2        {
+ 254   3          if( (time_diff>= DECODE_BIT_CNT_ZERO_L)       // 1 period
+ 255   3              &&(time_diff< DECODE_BIT_CNT_ZERO_H))
+ 256   3          {
+ 257   4            p_rcv_packet_info->bit_val = 0;
+ 258   4            p_rcv_packet_info->bit_set = TX_ON;         
+ 259   4          }   
+ 260   3          else
+ 261   3          {
+ 262   4            if( (time_diff> DECODE_BIT_CNT_ONE_L)   // 1/2 period
+ 263   4              &&(time_diff< DECODE_BIT_CNT_ONE_H))
+ 264   4            {
+ 265   5              p_rcv_packet_info->bit_val = 1;
+ 266   5              if( p_rcv_packet_info->packet_part != PREAMBLE)
+ 267   5              {
+ 268   6                p_rcv_packet_info->cnt_on = TX_FALSE;
+ 269   6              }             
+ 270   5              p_rcv_packet_info->bit_set = TX_ON;
+ 271   5            }       
+ 272   4            else
+ 273   4            {
+ 274   5              p_rcv_packet_info->receive_trigger = TX_OFF;
+ 275   5              if(p_rcv_packet_info->packet_set != TX_ON)
+ 276   5              {
+ 277   6                      memset( p_rcv_packet_info,0,sizeof(TX_RECEIVE_PACKET_INFO_S));
+ 278   6         //             memset( p_rcv_packet_struct,0,sizeof(RX_PACKET_STRUCTURE_S));
+ 279   6              }
+ 280   5            }
+ 281   4          }
+ 282   3        }
+ 283   2        else
+ 284   2        {
+ 285   3          p_rcv_packet_info->cnt_on = TX_TRUE;         
+ 286   3        }
+ 287   2        
+ 288   2      /*======================= Decode the packet =========================*/ 
+ 289   2        if(p_rcv_packet_info->bit_set == TX_ON)
+ 290   2        {
+ 291   3      
+ 292   3          /********************* PREAMBLE *********************/
+ 293   3          if(p_rcv_packet_info->packet_part == PREAMBLE)
+ 294   3          {
+ 295   4            if(p_rcv_packet_info->bit_val==1)
+ 296   4            {
+ 297   5              p_rcv_packet_info->half_bit_cnt+=1;
+ 298   5            }
+ 299   4            else if(p_rcv_packet_info->bit_val==0)
+ 300   4            {
+ 301   5              if ((QC==2)&&(tx_phase == TX_PHASE_PT)&&(p_rcv_packet_info->half_bit_cnt>8)&&(p_rcv_packet_info->half_
+             -bit_cnt<50)&&(vol))
+C51 COMPILER V9.54   RCVPKT                                                                03/19/2018 09:53:24 PAGE 6   
+
+ 302   5              {
+ 303   6                t_ce_cnt_1ms = 0;
+ 304   6                if(!BPP)
+ 305   6                  t_rp_cnt_1ms = 0;
+ 306   6              }
+ 307   5              if(p_rcv_packet_info->half_bit_cnt>4)
+ 308   5              {
+ 309   6                p_rcv_packet_info->bit_cnt = 1; // received header's start bit
+ 310   6                p_rcv_packet_info->packet_part = HEADER;
+ 311   6              }
+ 312   5              else
+ 313   5              {
+ 314   6                p_rcv_packet_info->half_bit_cnt = 0;
+ 315   6                p_rcv_packet_info->receive_trigger = TX_OFF;
+ 316   6                p_rcv_packet_info->error_type = ERR_DECODE_ERROR_FEW_PERAMBLE_BIT;
+ 317   6              }
+ 318   5            }
+ 319   4          }
+ 320   3          /********************* HEADER *********************/
+ 321   3          else if(p_rcv_packet_info->packet_part == HEADER)
+ 322   3          {
+ 323   4            if( ERR_NO_ERROR == Decode_OneByte( p_rcv_packet_info))
+ 324   4            {
+ 325   5              if( TX_ON == p_rcv_packet_info->byte_set) // finish decode a byte
+ 326   5              {
+ 327   6                p_rcv_packet_info->byte_set = TX_OFF;
+ 328   6                p_rcv_packet_struct->header = p_rcv_packet_info->byte_val;
+ 329   6                p_rcv_packet_struct->msg_len = Cul_MsgLen(p_rcv_packet_struct->header);
+ 330   6      
+ 331   6                p_rcv_packet_info->packet_part = MESSAGE;
+ 332   6      
+ 333   6                          if(p_rcv_packet_struct->header==0x03)
+ 334   6                          {
+ 335   7                            t_ce_cnt_1ms = 0;
+ 336   7                  t_pr_cnt_1ms=0;
+ 337   7                          }
+ 338   6                          else if(p_rcv_packet_struct->header==0x04)
+ 339   6                          {
+ 340   7                            t_rp_cnt_1ms=0;
+ 341   7                  t_pr_cnt_1ms=0;
+ 342   7                          }
+ 343   6              }
+ 344   5            }
+ 345   4            else if(ERR_NO_ERROR != p_rcv_packet_info->error_type)
+ 346   4            {
+ 347   5                memset( p_rcv_packet_info, 0, sizeof(TX_RECEIVE_PACKET_INFO_S));
+ 348   5            }
+ 349   4          }
+ 350   3          /********************* MESSAGE *********************/     
+ 351   3          else if(p_rcv_packet_info->packet_part == MESSAGE)
+ 352   3          {
+ 353   4            if( ERR_NO_ERROR == Decode_OneByte( p_rcv_packet_info))
+ 354   4            {
+ 355   5              if( TX_ON == p_rcv_packet_info->byte_set) // finish decode a byte
+ 356   5              {
+ 357   6                p_rcv_packet_info->byte_set = TX_OFF;
+ 358   6                p_rcv_packet_struct->msg[p_rcv_packet_info->byte_cnt] = p_rcv_packet_info->byte_val;
+ 359   6                p_rcv_packet_info->byte_cnt ++;
+ 360   6              }
+ 361   5              
+ 362   5              if(( p_rcv_packet_info->byte_cnt == p_rcv_packet_struct->msg_len)||(p_rcv_packet_info->byte_cnt>=MSG_L
+             -EN_MAX)) // finish decode all message
+C51 COMPILER V9.54   RCVPKT                                                                03/19/2018 09:53:24 PAGE 7   
+
+ 363   5              {
+ 364   6                p_rcv_packet_info->byte_cnt = 0;
+ 365   6                p_rcv_packet_info->packet_part = CHECKSUM;
+ 366   6              }
+ 367   5            }
+ 368   4            else if(ERR_NO_ERROR != p_rcv_packet_info->error_type)
+ 369   4            {
+ 370   5                memset( p_rcv_packet_info, 0, sizeof(TX_RECEIVE_PACKET_INFO_S));
+ 371   5            }
+ 372   4          }
+ 373   3          /********************* CHECKSUM *********************/      
+ 374   3          else if(p_rcv_packet_info->packet_part == CHECKSUM)
+ 375   3          {
+ 376   4            if( ERR_NO_ERROR == Decode_OneByte( p_rcv_packet_info))
+ 377   4            {
+ 378   5              if( TX_ON == p_rcv_packet_info->byte_set) // finish decode a byte
+ 379   5              {
+ 380   6                p_rcv_packet_info->byte_set = TX_OFF;
+ 381   6                p_rcv_packet_struct->checksum = p_rcv_packet_info->byte_val;
+ 382   6                p_rcv_packet_info->packet_set = TX_ON;
+ 383   6              }
+ 384   5            }
+ 385   4            else if(ERR_NO_ERROR != p_rcv_packet_info->error_type)
+ 386   4            {
+ 387   5                memset( p_rcv_packet_info, 0, sizeof(TX_RECEIVE_PACKET_INFO_S));
+ 388   5            }
+ 389   4          }
+ 390   3          p_rcv_packet_info->bit_set = TX_OFF;//
+ 391   3        }
+ 392   2      }
+ 393   1      /*======================= Reset Decode Environment Variable =========================*/
+ 394   1      //  if( (p_rcv_packet_info->receive_trigger == TX_OFF)
+ 395   1      //    ||(ERR_NO_ERROR != p_rcv_packet_info->error_type))//
+ 396   1      //  {
+ 397   1      //    p_rcv_packet_info->bit_cnt = 0;
+ 398   1      //    p_rcv_packet_info->byte_val = 0;
+ 399   1      //    p_rcv_packet_info->parity_cnt = 0;
+ 400   1      //    p_rcv_packet_info->half_bit_cnt = 0;
+ 401   1      
+ 402   1      //    p_rcv_packet_info->error_type = ERR_NO_ERROR;
+ 403   1      //  }
+ 404   1      
+ 405   1        return;
+ 406   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1871    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----      24
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      8       5
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

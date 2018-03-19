@@ -1,0 +1,279 @@
+C51 COMPILER V9.54   MAIN                                                                  03/19/2018 09:53:24 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Output\main.obj
+COMPILER INVOKED BY: d:\Keil_v5\C51\BIN\C51.EXE Code\main.c LARGE OPTIMIZE(4,SPEED) BROWSE INCDIR(..\..\Include) DEFINE(
+                    -FOSC_160000) DEBUG OBJECTEXTEND PRINT(.\LST\main.lst) TABS(2) OBJECT(.\Output\main.obj)
+
+line level    source
+
+   1          
+   2          #include <stdio.h>
+   3          #include "N76E003.h"
+   4          #include "Define.h"
+   5          #include "Common.h"
+   6          #include "Delay.h"
+   7          #include "SFR_Macro.h"
+   8          #include "Function_define.h"
+   9          #include "hal.h"
+  10          #include "rcvpkt.h"
+  11          #include "ping.h"
+  12          #include "selection.h"
+  13          #include "idcfg.h"
+  14          #include "pt.h"
+  15          #include "version.h"
+  16          
+  17          TX_POWER_CONTROL_PARAMETER_S  power_ctrl_pram;
+  18          TX_S           tx;
+  19          TX_PHASE_E  tx_phase = TX_PHASE_INVALID;
+  20          TX_DETECT_INFO_S        tx_info;
+  21          uint_16   t_rp_cnt_1ms = 0;
+  22          uint_16   t_ce_cnt_1ms = 0;
+  23          uint_16   t_pr_cnt_1ms = 0;
+  24          u8 Samsung=0;
+  25          u8 QC=0; 
+  26          u16 IPA0=0;
+  27          u32 Fremin=OPREATE_RANGE_FRE_MIN;
+  28          u8 echrx=0;/*0: not ech rx; other: ech rx.(1: samsung or epp or bpp ech rx,2 new personal ech protocol for
+             - "jingli" phone)*/
+  29          u8 Xamsung=0;
+  30          u8 ASKch=0;
+  31          //u8 id1=0;
+  32          //u8 id2=0;
+  33          u8 Apple=0;
+  34          u8 BPP=0;
+  35          u16 sipa=0;
+  36          u16 sfod=0;
+  37          #if S50B
+              u32 ledon=0;
+              #endif
+  40          #if NTCOPENSHORT
+  41          u8 ntc=0;
+  42          #endif
+  43          #if FPDDET_EXITPT3TIMES_SUPPORT // exit pt 3 times
+  44            EXIT_PT_INFO_S    exit_pt_info;
+  45          #endif
+  46          #if NEW_TEMPDET_SLOW_CHARGING
+  47          u8  temp_slow_state = 0;/*0:fast charging, 1: samsung enter low power during fast_charging, 2: samsung ente
+             -r or at slow charging after 1*/
+  48          #endif
+  49          #if FORT20
+  50          u8 hftofb=0;
+  51          #endif
+  52          u8 vqi=0;
+C51 COMPILER V9.54   MAIN                                                                  03/19/2018 09:53:24 PAGE 2   
+
+  53          
+  54          
+  55          void main (void) 
+  56          {
+  57   1        u16 i;  
+  58   1        u16 temp;
+  59   1      
+  60   1        clr_EA;
+  61   1        TA=0xAA;
+  62   1        TA=0x55;
+  63   1        CKEN|=0xc0;
+  64   1        while(1)
+  65   1        {
+  66   2          if(CKSWT&0x08)
+  67   2            break;
+  68   2        }
+  69   1        TA=0xAA;
+  70   1        TA=0x55;
+  71   1        CKSWT=0x02;
+  72   1        TA=0xAA;
+  73   1        TA=0x55;  
+  74   1        CKEN&=0xc0; 
+  75   1        
+  76   1        InitPWM();
+  77   1        SetPWM(146000,500);
+  78   1        PWMEn(0); 
+  79   1        InitialUART0_Timer1(115200);
+  80   1        InitTimer3();
+  81   1        InitCapture();
+  82   1        InitGPIO();
+  83   1        set_EA;
+  84   1      #if S50B
+                TIMER_1ms_ENABLE(1);
+                ledon=1;
+              #else 
+  88   1        LED1=0;
+  89   1      #endif
+  90   1        Reset_Receive_Packet();
+  91   1        if(GetVpa()>MAX_PA_VOLTAGE)  //输入过压检测
+  92   1        {
+  93   2          tx_phase=OVP;             
+  94   2        }
+  95   1        else
+  96   1        {
+  97   2          tx_phase = TX_PHASE_SELECT;
+  98   2        }
+  99   1      #if NTCOPENSHORT
+ 100   1        temp=GetTemp();
+ 101   1        if((temp >3200) || (temp < 600))
+ 102   1        {
+ 103   2          printf("Vtemp=%hu \n",temp);
+ 104   2          ntc=1;
+ 105   2        }
+ 106   1      #endif  
+ 107   1        QC20SHAKE();
+ 108   1        QC20OUT12V();
+ 109   1        Delay_ms(1000);
+ 110   1      #if NTCOPENSHORT
+ 111   1          ntc=0;
+ 112   1      #endif
+ 113   1        printf("Vpa=%hu \n",GetVpa());
+ 114   1        if(GetVpa()>8000)
+C51 COMPILER V9.54   MAIN                                                                  03/19/2018 09:53:24 PAGE 3   
+
+ 115   1          QC=2;
+ 116   1        else
+ 117   1          QC=0;
+ 118   1        LED1=1;   //QC握手
+ 119   1        
+ 120   1        Delay_ms(100);
+ 121   1        IPA0=GetIpa();//ipa offset
+ 122   1        
+ 123   1      
+ 124   1        printf("%s\n", VERSION);
+ 125   1        printf("QC=%bd \n",QC);
+ 126   1        printf("IPAoffset=%hu \n",IPA0);
+ 127   1      //  printf("CKEN=%bx\n",CKEN);
+ 128   1      //  printf("CKSWT=%bx\n",CKSWT);
+ 129   1      
+ 130   1        
+ 131   1        while(1)
+ 132   1        {
+ 133   2          switch(tx_phase)
+ 134   2          {
+ 135   3            case TX_PHASE_SELECT:
+ 136   3            {
+ 137   4                    #if S50B
+                              ledon=0;
+                            #endif
+ 140   4                    if(GetVpa()>MAX_PA_VOLTAGE)
+ 141   4                    { 
+ 142   5                      tx_phase=OVP;
+ 143   5                      Disable_coil_power();
+ 144   5                      break;                     
+ 145   5                    }          
+ 146   4                    if(GetVpa()>7000)
+ 147   4                      QC=2;
+ 148   4                    else
+ 149   4                      QC=0;   
+ 150   4                    temp=GetTemp();
+ 151   4                    printf("Vtemp=%hu \n",temp);
+ 152   4                    Disable_coil_power();
+ 153   4                    LED1=1;                  
+ 154   4                    if(!Samsung) 
+ 155   4                      Delay_ms(200);     
+ 156   4                    if((exit_pt_info.reason_last == EXIT_PT_REASON_WRONG_PACKET)&&(Samsung))
+ 157   4                      Delay_ms(300);          
+ 158   4                    
+ 159   4                    Samsung=0;     
+ 160   4                    Delay_ms(300);  
+ 161   4      
+ 162   4                    TX_Phase_ProcessSelect();     
+ 163   4            }
+ 164   3            break;
+ 165   3      
+ 166   3            case TX_PHASE_PING:
+ 167   3            {
+ 168   4              TX_Phase_ProcessPing();
+ 169   4            }
+ 170   3            break;
+ 171   3      
+ 172   3            case TX_PHASE_IDCFG:
+ 173   3            {
+ 174   4              TX_Phase_ProcessCfg(&tx_info); 
+ 175   4            }
+ 176   3            break;
+C51 COMPILER V9.54   MAIN                                                                  03/19/2018 09:53:24 PAGE 4   
+
+ 177   3            case TX_PHASE_PT:
+ 178   3            {
+ 179   4              TX_Phase_ProcessPT(&tx_info);
+ 180   4            }
+ 181   3            break;
+ 182   3            
+ 183   3            case OVERTEMP:
+ 184   3            {
+ 185   4              LED1=1;
+ 186   4              for(i=0;i<600;i++)
+ 187   4              {
+ 188   5                LED1=0;
+ 189   5                Delay_ms(500);
+ 190   5                LED1=1;
+ 191   5                Delay_ms(500);
+ 192   5                    
+ 193   5                if(GetTemp()> TEMPTH4)//40度
+ 194   5                {
+ 195   6                  Delay_ms(300);
+ 196   6                  if(GetTemp() > TEMPTH4)
+ 197   6                  break;
+ 198   6                }
+ 199   5               }
+ 200   4               tx_phase=TX_PHASE_SELECT;
+ 201   4              }
+ 202   3              break;        
+ 203   3       
+ 204   3                case COMPLETE:
+ 205   3                {
+ 206   4                   LED1=1;
+ 207   4                   while(1)
+ 208   4                  {                    
+ 209   5                      Enable_coil_power();
+ 210   5                      Delay_ms(5);
+ 211   5                      i=GetIpa()-IPA0;
+ 212   5                      if((i>30)&&(i<65)&&(QC==0))
+ 213   5                        break;
+ 214   5                      else if((i>15)&&(i<45)&&(QC==2))
+ 215   5                        break;
+ 216   5                      Disable_coil_power();
+ 217   5                      Delay_ms(300);
+ 218   5                   }
+ 219   4        
+ 220   4                  LED1=1;
+ 221   4                  LED2=1;
+ 222   4                  tx_phase=TX_PHASE_SELECT;
+ 223   4                }
+ 224   3                break;
+ 225   3                case OVP:
+ 226   3                {
+ 227   4                    QC20OUT12V();
+ 228   4                    while(GetVpa()>MAX_PA_VOLTAGE)
+ 229   4                    {
+ 230   5                      Delay_ms(1000);
+ 231   5                      LED1=0;
+ 232   5                      Delay_ms(1000);
+ 233   5                      LED1=1;
+ 234   5                    }   
+ 235   4                    tx_phase=TX_PHASE_SELECT;
+ 236   4                }              
+ 237   3            default:
+ 238   3                break;  
+C51 COMPILER V9.54   MAIN                                                                  03/19/2018 09:53:24 PAGE 5   
+
+ 239   3          }
+ 240   2        }
+ 241   1      }
+ 242          
+ 243          
+ 244          
+ 245          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    869    ----
+   CONSTANT SIZE    =     93    ----
+   XDATA SIZE       =     44       4
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     72    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
